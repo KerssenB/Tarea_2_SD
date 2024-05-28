@@ -2,15 +2,18 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"tarea2_noti/email"
 	"tarea2_noti/kafka"
 
 	"github.com/IBM/sarama"
+	"github.com/joho/godotenv"
 )
 
 type Pedido struct {
@@ -20,15 +23,34 @@ type Pedido struct {
 	Estado   string `json:"estado"`
 }
 
-func enviarNotificacion(pedido Pedido, smtpConfig email.SMTPConfig) {
-	destinatario := "pruebaskb2024@gmail.com"
-	asunto := "Actualización del Estado del Pedido"
-	cuerpo := "El estado de tu pedido ha cambiado a: " + pedido.Estado
+func main() {
+	// Cargar las variables de entorno desde el archivo .env
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error al cargar el archivo .env")
+	}
 
-	email.EnviarCorreo(smtpConfig, destinatario, asunto, cuerpo)
-}
+	// Obtener la configuración SMTP desde las variables de entorno
+	smtpHost := os.Getenv("SMTP_HOST")
+	smtpPort := os.Getenv("SMTP_PORT")
+	smtpUsername := os.Getenv("SMTP_USERNAME")
+	smtpPassword := os.Getenv("SMTP_PASSWORD")
+	smtpRecipient := os.Getenv("SMTP_RECIPIENT")
 
-func notificacion(smtpConfig email.SMTPConfig) {
+	// Convertir el puerto SMTP a entero
+	smtpPortInt, err := strconv.Atoi(smtpPort)
+	if err != nil {
+		log.Fatalf("Error al convertir SMTP_PORT a entero: %v", err)
+	}
+
+	// Configurar SMTP
+	config := email.NewSMTPConfig(smtpHost, smtpPortInt, smtpUsername, smtpPassword)
+
+	err = kafka.ConexionKafka()
+	if err != nil {
+		log.Fatal("Error al configurar Kafka:", err)
+	}
+
 	partitionConsumer, err := kafka.Consumer.ConsumePartition("pedidos-topic", 0, sarama.OffsetNewest)
 	if err != nil {
 		log.Fatalf("Error al iniciar el consumidor de la partición: %v", err)
@@ -48,10 +70,15 @@ func notificacion(smtpConfig email.SMTPConfig) {
 				continue
 			}
 
-			// Solo enviar notificación si el pedido tiene un estado
 			if pedido.Estado != "" {
-				log.Printf("Notificación - Pedido actualizado: %+v\n", pedido)
-				enviarNotificacion(pedido, smtpConfig)
+				subject := "Actualización de estado del pedido"
+				body := fmt.Sprintf("El pedido con ID %s ahora está en estado: %s", pedido.ID, pedido.Estado)
+				err := config.SendEmail(smtpRecipient, subject, body)
+				if err != nil {
+					log.Printf("Error al enviar el correo: %v", err)
+				} else {
+					log.Printf("Notificación - Pedido actualizado: %+v\n", pedido)
+				}
 			}
 
 		case <-sigchan:
@@ -59,24 +86,4 @@ func notificacion(smtpConfig email.SMTPConfig) {
 			return
 		}
 	}
-}
-
-func main() {
-	err := kafka.ConexionKafka()
-	if err != nil {
-		log.Fatal("Error al configurar Kafka:", err)
-	}
-
-	smtpConfig := email.SMTPConfig{
-		Host:     "smtp.gmail.com",
-		Port:     587,
-		Username: "pruebaskb2024@gmail.com",
-		Password: "sels uhky urwi rzpn",
-	}
-
-	// Iniciar el servicio de notificación
-	go notificacion(smtpConfig)
-
-	// Mantener el servicio en ejecución
-	select {}
 }

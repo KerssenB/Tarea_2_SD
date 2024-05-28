@@ -1,9 +1,8 @@
 package email
 
 import (
-	"log"
-
-	"gopkg.in/gomail.v2"
+	"fmt"
+	"net/smtp"
 )
 
 type SMTPConfig struct {
@@ -13,19 +12,22 @@ type SMTPConfig struct {
 	Password string
 }
 
-func EnviarCorreo(config SMTPConfig, destinatario string, asunto string, cuerpo string) {
-	m := gomail.NewMessage()
-	m.SetHeader("From", config.Username)
-	m.SetHeader("To", destinatario)
-	m.SetHeader("Subject", asunto)
-	m.SetBody("text/plain", cuerpo)
-
-	d := gomail.NewDialer(config.Host, config.Port, config.Username, config.Password)
-
-	if err := d.DialAndSend(m); err != nil {
-		log.Printf("Error al enviar el correo: %v", err)
-		return
+func NewSMTPConfig(host string, port int, username, password string) *SMTPConfig {
+	return &SMTPConfig{
+		Host:     host,
+		Port:     port,
+		Username: username,
+		Password: password,
 	}
+}
 
-	log.Println("Correo enviado exitosamente")
+func (config *SMTPConfig) SendEmail(recipient, subject, body string) error {
+	auth := smtp.PlainAuth("", config.Username, config.Password, config.Host)
+	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+
+	msg := []byte("To: " + recipient + "\r\n" +
+		"Subject: " + subject + "\r\n" +
+		"\r\n" + body + "\r\n")
+
+	return smtp.SendMail(addr, auth, config.Username, []string{recipient}, msg)
 }
