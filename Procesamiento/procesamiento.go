@@ -64,7 +64,7 @@ func procesamiento() {
 
 func cambiarEstado(pedido Pedido) {
 	for {
-		time.Sleep(10 * time.Second) // Cambia este valor para ajustar la frecuencia
+		time.Sleep(10 * time.Second)
 
 		mu.Lock()
 		switch pedido.Estado {
@@ -78,14 +78,12 @@ func cambiarEstado(pedido Pedido) {
 			pedido.Estado = "Finalizado"
 		default:
 			mu.Unlock()
-			return // Si el estado es "finalizado", terminar la función
+			return
 		}
 
-		// Actualizar el pedido en el mapa antes de enviar
 		pedidosProcesados[pedido.ID] = pedido
 		mu.Unlock()
 
-		// Verificar el estado antes de enviar
 		if pedido.Estado == "" {
 			continue
 		}
@@ -116,9 +114,7 @@ func main() {
 		log.Fatal("Error al configurar Kafka:", err)
 	}
 
-	// Iniciar el servicio de procesamiento
 	go procesamiento()
 
-	// Mantener el servicio en ejecución
 	select {}
 }

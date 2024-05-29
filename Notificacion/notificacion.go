@@ -47,7 +47,6 @@ func main() {
 		log.Fatalf("Error al convertir SMTP_PORT a entero: %v", err)
 	}
 
-	// Configurar SMTP
 	config := email.NewSMTPConfig(smtpHost, smtpPortInt, smtpUsername, smtpPassword)
 
 	err = kafka.ConexionKafka()

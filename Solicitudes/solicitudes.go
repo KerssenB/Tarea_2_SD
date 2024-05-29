@@ -26,7 +26,6 @@ func crearPedido(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generar una ID única para el pedido
 	nuevoPedido.ID = uuid.New().String()
 
 	log.Printf("Pedido recibido: %+v\n", nuevoPedido)

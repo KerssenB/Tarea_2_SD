@@ -2,7 +2,6 @@ import random
 import json
 import itertools
 
-# Lista de nombres de productos en español
 nombres_productos = [
     "Camiseta",
     "Pantalones",
@@ -26,10 +25,8 @@ nombres_productos = [
     "Sudadera"
 ]
 
-# Lista de colores
 colores = ["Negro", "Blanco", "Azul", "Rojo", "Verde", "Gris", "Amarillo", "Morado", "Rosado", "Naranja"]
 
-# Diccionario de rangos de precios por categoría de productos en CLP
 rangos_precios = {
     "Camiseta": (5000, 20000),
     "Pantalones": (10000, 30000),
@@ -53,14 +50,12 @@ rangos_precios = {
     "Sudadera": (10000, 40000)
 }
 
-# Generar todas las combinaciones posibles de productos con sus precios
 combinaciones = []
 for producto, color in itertools.product(nombres_productos, colores):
     precio_min, precio_max = rangos_precios[producto]
     precio = random.randint(precio_min, precio_max) 
     combinaciones.append({"producto": f"{producto} {color}", "precio": precio})
 
-# Seleccionar 300,000 productos de forma aleatoria
 productos = []
 total_c = len(combinaciones) - 1
 
@@ -68,7 +63,6 @@ for i in range(300000):
     n = random.randint(0, total_c)
     productos.append(combinaciones[n])
 
-# Escribir los productos seleccionados en un archivo JSON
 with open('productos.json', mode='w', encoding='utf-8') as file:
     json.dump(productos, file, ensure_ascii=False, indent=4)
 
