@@ -69,7 +69,9 @@ func main() {
 		}(partition)
 	}
 
+	serveHTTP()
 	wg.Wait()
+
 }
 
 func consumePartition(partition int32, config *email.SMTPConfig, recipient string) {
