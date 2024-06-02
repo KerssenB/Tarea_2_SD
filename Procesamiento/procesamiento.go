@@ -26,42 +26,6 @@ var (
 	mu                sync.Mutex
 )
 
-func procesamiento() {
-	partitionConsumer, err := kafka.Consumer.ConsumePartition("pedidos-topic", 0, sarama.OffsetNewest)
-	if err != nil {
-		log.Fatalf("Error al iniciar el consumidor de la partición: %v", err)
-	}
-	defer partitionConsumer.Close()
-
-	sigchan := make(chan os.Signal, 1)
-	signal.Notify(sigchan, os.Interrupt, syscall.SIGTERM)
-
-	for {
-		select {
-		case msg := <-partitionConsumer.Messages():
-			var pedido Pedido
-			err := json.Unmarshal(msg.Value, &pedido)
-			if err != nil {
-				log.Printf("Error al deserializar el mensaje: %v", err)
-				continue
-			}
-
-			log.Printf("Pedido recibido: %+v\n", pedido)
-
-			mu.Lock()
-			if _, exists := pedidosProcesados[pedido.ID]; !exists {
-				pedidosProcesados[pedido.ID] = pedido
-				go cambiarEstado(pedido)
-			}
-			mu.Unlock()
-
-		case <-sigchan:
-			log.Println("Deteniendo el consumidor de Kafka")
-			return
-		}
-	}
-}
-
 func cambiarEstado(pedido Pedido) {
 	for {
 		time.Sleep(10 * time.Second)
@@ -103,8 +67,61 @@ func cambiarEstado(pedido Pedido) {
 			log.Println("Error al enviar el mensaje a Kafka:", err)
 			continue
 		}
+	}
+}
 
-		log.Printf("Pedido actualizado y enviado a Kafka: %+v\n", pedido)
+func procesamiento() {
+	partitions, err := kafka.Consumer.Partitions("pedidos-topic")
+	if err != nil {
+		log.Fatalf("Error al obtener las particiones: %v", err)
+	}
+
+	var wg sync.WaitGroup
+
+	for _, partition := range partitions {
+		wg.Add(1)
+		go func(partition int32) {
+			defer wg.Done()
+			consumePartition(partition)
+		}(partition)
+	}
+
+	wg.Wait()
+}
+
+func consumePartition(partition int32) {
+	partitionConsumer, err := kafka.Consumer.ConsumePartition("pedidos-topic", partition, sarama.OffsetNewest)
+	if err != nil {
+		log.Fatalf("Error al iniciar el consumidor de la partición %d: %v", partition, err)
+	}
+	defer partitionConsumer.Close()
+
+	sigchan := make(chan os.Signal, 1)
+	signal.Notify(sigchan, os.Interrupt, syscall.SIGTERM)
+
+	for {
+		select {
+		case msg := <-partitionConsumer.Messages():
+			var pedido Pedido
+			err := json.Unmarshal(msg.Value, &pedido)
+			if err != nil {
+				log.Printf("Error al deserializar el mensaje: %v", err)
+				continue
+			}
+
+			log.Printf("Pedido recibido de la partición %d: %+v\n", partition, pedido)
+
+			mu.Lock()
+			if _, exists := pedidosProcesados[pedido.ID]; !exists {
+				pedidosProcesados[pedido.ID] = pedido
+				go cambiarEstado(pedido)
+			}
+			mu.Unlock()
+
+		case <-sigchan:
+			log.Println("Deteniendo el consumidor de Kafka")
+			return
+		}
 	}
 }
 

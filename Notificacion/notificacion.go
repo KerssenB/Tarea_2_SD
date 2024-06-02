@@ -54,48 +54,67 @@ func main() {
 		log.Fatal("Error al configurar Kafka:", err)
 	}
 
-	partitionConsumer, err := kafka.Consumer.ConsumePartition("pedidos-topic", 0, sarama.OffsetNewest)
+	partitions, err := kafka.Consumer.Partitions("pedidos-topic")
 	if err != nil {
-		log.Fatalf("Error al iniciar el consumidor de la partición: %v", err)
+		log.Fatalf("Error al obtener las particiones: %v", err)
+	}
+
+	var wg sync.WaitGroup
+
+	for _, partition := range partitions {
+		wg.Add(1)
+		go func(partition int32) {
+			defer wg.Done()
+			consumePartition(partition, config, smtpRecipient)
+		}(partition)
+	}
+
+	wg.Wait()
+}
+
+func consumePartition(partition int32, config *email.SMTPConfig, recipient string) {
+	partitionConsumer, err := kafka.Consumer.ConsumePartition("pedidos-topic", partition, sarama.OffsetNewest)
+	if err != nil {
+		log.Fatalf("Error al iniciar el consumidor de la partición %d: %v", partition, err)
 	}
 	defer partitionConsumer.Close()
 
-	go func() {
-		sigchan := make(chan os.Signal, 1)
-		signal.Notify(sigchan, os.Interrupt, syscall.SIGTERM)
+	sigchan := make(chan os.Signal, 1)
+	signal.Notify(sigchan, os.Interrupt, syscall.SIGTERM)
 
-		for {
-			select {
-			case msg := <-partitionConsumer.Messages():
-				var pedido Pedido
-				err := json.Unmarshal(msg.Value, &pedido)
-				if err != nil {
-					log.Printf("Error al deserializar el mensaje: %v", err)
-					continue
-				}
-
-				if pedido.Estado != "" {
-					mu.Lock()
-					pedidosProcesados[pedido.ID] = pedido
-					mu.Unlock()
-
-					subject := "Actualización de estado del pedido"
-					body := fmt.Sprintf("El pedido con ID %s ahora está en estado: %s", pedido.ID, pedido.Estado)
-					err := config.SendEmail(smtpRecipient, subject, body)
-					if err != nil {
-						log.Printf("Error al enviar el correo: %v", err)
-					} else {
-						log.Printf("Notificación - Pedido actualizado: %+v\n", pedido)
-					}
-				}
-
-			case <-sigchan:
-				log.Println("Deteniendo el consumidor de Kafka")
-				return
+	for {
+		select {
+		case msg := <-partitionConsumer.Messages():
+			var pedido Pedido
+			err := json.Unmarshal(msg.Value, &pedido)
+			if err != nil {
+				log.Printf("Error al deserializar el mensaje: %v", err)
+				continue
 			}
-		}
-	}()
 
+			if pedido.Estado != "" {
+				mu.Lock()
+				pedidosProcesados[pedido.ID] = pedido
+				mu.Unlock()
+
+				subject := "Actualización de estado del pedido"
+				body := fmt.Sprintf("El pedido con ID %s ahora está en estado: %s", pedido.ID, pedido.Estado)
+				err := config.SendEmail(recipient, subject, body)
+				if err != nil {
+					log.Printf("Error al enviar el correo: %v", err)
+				} else {
+					log.Printf("Notificación - Pedido actualizado: %+v\n", pedido)
+				}
+			}
+
+		case <-sigchan:
+			log.Println("Deteniendo el consumidor de Kafka")
+			return
+		}
+	}
+}
+
+func serveHTTP() {
 	http.HandleFunc("/pedidos", func(w http.ResponseWriter, r *http.Request) {
 		id := r.URL.Query().Get("id")
 		if id == "" {
